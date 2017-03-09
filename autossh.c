@@ -81,7 +81,7 @@ extern char *__progname;
 char *__progname;
 #endif
 
-const char *rcsid = "$Id: autossh.c,v 1.82 2011/10/12 20:29:22 harding Exp $";
+const char *rcsid = "$Id: autossh.c,v 1.84 2015/02/10 04:31:16 harding Exp $";
 
 #ifndef SSH_PATH
 #  define SSH_PATH "/usr/bin/ssh"
@@ -436,6 +436,19 @@ main(int argc, char **argv)
 		add_arg(argv[i]);
 	}
 
+	if (runasdaemon) {
+		if (daemon(0, 0) == -1) {
+			xerrlog(LOG_ERR, "run as daemon failed: %s", 
+			    strerror(errno));
+		}
+		/* 
+		 * If running as daemon, the user likely wants it
+		 * to just run and not fail early (perhaps machines
+		 * are coming up, etc.)
+		 */ 
+		gate_time = 0;
+	}
+
 	/* 
 	 * Only if we're doing the network monitor thing.
 	 * Socket once opened stays open for listening for 
@@ -448,19 +461,6 @@ main(int argc, char **argv)
 			(void)fcntl(sock, F_SETFD, FD_CLOEXEC);
 		} else
 			sock = NO_RD_SOCK;
-	}
-
-	if (runasdaemon) {
-		if (daemon(0, 0) == -1) {
-			xerrlog(LOG_ERR, "run as daemon failed: %s", 
-			    strerror(errno));
-		}
-		/* 
-		 * If running as daemon, the user likely wants it
-		 * to just run and not fail early (perhaps machines
-		 * are coming up, etc.)
-		 */ 
-		gate_time = 0;
 	}
 
 	if (pid_file_name) {
@@ -506,7 +506,7 @@ add_arg(char *s)
 		return;
 
 	if (!newav) {
-		newav = malloc(START_AV_SZ * sizeof(char *));
+		newav = calloc(START_AV_SZ, sizeof(char *));
 		if (!newav)
 			xerrlog(LOG_ERR, "malloc: %s", strerror(errno));
 	} else if (newac >= newamax-1) {
@@ -592,15 +592,6 @@ get_env_args(void)
 			xerrlog(LOG_ERR, "invalid log level \"%s\"", s);
 	}
 
-	if ((s = getenv("AUTOSSH_FIRST_POLL")) != NULL) {
-		first_poll_time = strtoul(s, &t, 0);
-		if (*s == '\0' || first_poll_time == 0 || *t != '\0' )
-			xerrlog(LOG_ERR, 
-			    "invalid first poll time \"%s\"", s);
-		if (first_poll_time <= 0)
-			first_poll_time = POLL_TIME;
-	}
-
 	if ((s = getenv("AUTOSSH_POLL")) != NULL) {
 		poll_time = strtoul(s, &t, 0);
 		if (*s == '\0' || poll_time == 0 || *t != '\0' )
@@ -608,6 +599,21 @@ get_env_args(void)
 			    "invalid poll time \"%s\"", s);
 		if (poll_time <= 0)
 			poll_time = POLL_TIME;
+	}
+
+	if ((s = getenv("AUTOSSH_FIRST_POLL")) != NULL) {
+		first_poll_time = strtoul(s, &t, 0);
+		if (*s == '\0' || first_poll_time == 0 || *t != '\0' )
+			xerrlog(LOG_ERR, 
+			    "invalid first poll time \"%s\"", s);
+		if (first_poll_time <= 0)
+			first_poll_time = POLL_TIME;
+	} else {
+		/* 
+		 * If first poll time not explicitly set, first
+		 * poll time should equal poll time. 
+		 */
+		first_poll_time = poll_time;
 	}
 
 	if ((s = getenv("AUTOSSH_GATETIME")) != NULL) {
